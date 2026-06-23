@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pieceofmind"
+version = "0.1.0"
+description = "Measured input attribution for LLM decisions: averaged ablation + exact Shapley with a noise floor. Tells you which evidence a recommendation actually rests on -- and when the measurement is too noisy to trust. Zero dependencies; bring your own LLM."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Rafal Misiorski" }]
+keywords = [
+    "llm", "attribution", "shapley", "explainability", "xai",
+    "provenance", "ablation", "evaluation", "noise-floor",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Intended Audience :: Developers",
+]
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

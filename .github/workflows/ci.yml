@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (zero runtime deps; pytest only)
+        run: pip install pytest
+      - name: Run tests
+        run: pytest -q
+      - name: Offline demos must run with no API key
+        run: |
+          python examples/hello.py
+          python -m pieceofmind --demo
+          python examples/correctness_debugger.py
+          python examples/known_limits.py
+        env:
+          PYTHONPATH: src
