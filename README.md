@@ -29,6 +29,20 @@ and on a real run cutting two such redundant rules beat naive "turn-it-off-and-c
 (see [BENCHMARK.md](BENCHMARK.md) / FINDINGS.md). Zero dependencies; bring your own LLM. **Read
 BENCHMARK.md first** -- it leads with the costs, the noise, and what we measured and KILLED.
 
+## Verify in 90 seconds (zero setup)
+
+Zero dependencies, no API key -- every claim here runs offline in ~1 second on a clean clone.
+
+```bash
+python -m pytest -q                          # 12 tests pass
+python examples/correctness_debugger.py      # reproduces: fill_all at -0.21 -> cut -> record-correctness 50% -> 100%
+python examples/marketing_attribution.py     # exact Shapley splits two redundant channels $20k each; leave-one-out would cut both
+python examples/known_limits.py              # where it FAILS (heterogeneity, cut-not-reword) -- measured, not hidden
+```
+
+Evidence ledger incl. the honest nulls (e.g. the provenance adapter that failed 0/4 on a held-out test):
+[FINDINGS.md](FINDINGS.md). Costs, noise, and how to pick K: [BENCHMARK.md](BENCHMARK.md).
+
 ## What it is (and is not)
 - IT IS: a tiny, black-box, model-agnostic **correctness-debugger** for prompt rules / inputs, with a
   **noise floor** (it tells you when a result is below the measurement noise) and an **efficiency
