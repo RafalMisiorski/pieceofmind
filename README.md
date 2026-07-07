@@ -41,7 +41,9 @@ python examples/known_limits.py              # where it FAILS (heterogeneity, cu
 ```
 
 Evidence ledger incl. the honest nulls (e.g. the provenance adapter that failed 0/4 on a held-out test):
-[FINDINGS.md](FINDINGS.md). Costs, noise, and how to pick K: [BENCHMARK.md](BENCHMARK.md).
+[FINDINGS.md](FINDINGS.md). Costs, noise, and how to pick K: [BENCHMARK.md](BENCHMARK.md). The scripts +
+raw outputs behind the headline numbers (−0.21/50→100, +16.7 vs LOO) are in
+[measurements/](measurements/) — runnable against **your own model** via a one-line stdin/stdout seam.
 
 ## What it is (and is not)
 - IT IS: a tiny, black-box, model-agnostic **correctness-debugger** for prompt rules / inputs, with a
