@@ -262,3 +262,28 @@ def test_shapley_deterministic_value_fn_all_zero_se():
     dead = per.get("dead") or per["x2"]
     assert x["se"] == 0 and x["significant"]
     assert dead["se"] == 0 and not dead["significant"]
+
+
+def test_shapley_empty_value_measured_not_assumed():
+    """empty_value=None -> v({}) is EVALUATED with the value_fn; the efficiency receipt then
+    holds against the real baseline instead of an assumed 0.0."""
+    from pieceofmind import attribute_shapley
+
+    # metric with a nonzero empty baseline: 0.4 with no inputs, +0.5 if "a" present
+    vf = lambda subset: 0.4 + (0.5 if "a" in subset else 0.0)
+
+    measured = attribute_shapley(["a", "b"], vf, k=1, empty_value=None)
+    assert measured.v_empty == 0.4
+    per_m = {p["id"]: p for p in measured.per_input}
+    assert abs(per_m["x1"]["shapley"] - 0.5) < 1e-9   # a: exactly its lift over the TRUE baseline
+    assert abs(per_m["x2"]["shapley"]) < 1e-9          # b: contributes nothing -> zero credit
+    assert not per_m["x2"]["significant"]
+
+    # The efficiency axiom holds BY CONSTRUCTION against whatever v(empty) was recorded --
+    # so a wrong assumed baseline doesn't break the receipt, it MISATTRIBUTES: the ambient
+    # 0.4 gets smeared onto the inputs and the do-nothing input earns phantom credit.
+    assumed = attribute_shapley(["a", "b"], vf, k=1)   # default 0.0 -- the fiction
+    assert assumed.v_empty == 0.0
+    per_a = {p["id"]: p for p in assumed.per_input}
+    assert per_a["x2"]["shapley"] > 0.15               # phantom credit for a no-op input
+    assert per_a["x2"]["significant"]                  # ...and the gate can't save you here

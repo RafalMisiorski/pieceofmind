@@ -136,12 +136,16 @@ class ShapleyReport:
 
 
 def attribute_shapley(inputs: Sequence, value_fn: ValueFn, *, k: int = 4,
-                      ids: Optional[list] = None, empty_value: float = 0.0) -> ShapleyReport:
+                      ids: Optional[list] = None,
+                      empty_value: Optional[float] = 0.0) -> ShapleyReport:
     """Exact Shapley attribution over all 2^n coalitions, each K-averaged, WITH a noise floor.
 
     Cost is 2^n*K value-function calls -- exact and affordable for small n (<=~12); for larger n use
-    sampled/permutation Shapley (not yet shipped). ``empty_value`` is v({}) (default 0.0: with no
-    inputs there is nothing to attribute).
+    sampled/permutation Shapley (not yet shipped). ``empty_value`` is v({}): pass ``None`` to have it
+    MEASURED (value_fn([]) averaged K times, with its SE propagated like any coalition) instead of
+    assumed -- do this whenever your metric is nonzero with no inputs (e.g. a model that scores 40%
+    with an empty prompt), or the efficiency receipt sum(Shapley) = v(full) - v(empty) is computed
+    against a fiction. The 0.0 default is only correct when "no inputs" genuinely scores zero.
 
     Same significance discipline as attribute_loo: each per-input Shapley value carries an SE
     propagated from the K-rerun SEs of every coalition it touches
@@ -157,7 +161,11 @@ def attribute_shapley(inputs: Sequence, value_fn: ValueFn, *, k: int = 4,
         for combo in itertools.combinations(range(n), r):
             S = frozenset(combo)
             if not combo:
-                values[S], ses[S] = empty_value, 0.0   # v({}) is a constant, not an estimate
+                if empty_value is None:                 # measure v({}) instead of assuming it
+                    st = _avg(value_fn, [], k)
+                    values[S], ses[S] = st["mean"], (st["se"] or 0.0)
+                else:
+                    values[S], ses[S] = empty_value, 0.0   # caller-asserted constant
                 continue
             st = _avg(value_fn, [inputs[i] for i in combo], k)
             values[S], ses[S] = st["mean"], (st["se"] or 0.0)
