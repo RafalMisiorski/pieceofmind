@@ -210,6 +210,23 @@ def test_label_free_checkers():
     assert combined('{"name":"x"}') and not combined("nope")
 
 
+def test_checker_edge_cases_from_review():
+    import pieceofmind.checkers as C
+    # 1. greedy-brace superstring: a valid JSON object amid other braces must still be found
+    assert C.valid_json('note {not json} then {"k": 1} end')
+    assert C.has_keys("k")('note {not json} then {"k": 1} end')
+    # 2. no_refusal: bare empathetic "sorry" is NOT a refusal; inability phrasings ARE
+    assert C.no_refusal("I am sorry to hear that; here is the JSON {}")
+    assert C.no_refusal("Sorry for the wait, here's your data")
+    assert not C.no_refusal("I cannot help with that")
+    assert not C.no_refusal("I'm sorry, but I won't do that")
+    assert not C.no_refusal("I am unable to comply")
+    # 3. no_preamble agrees with valid_json on fenced output (both tolerate the fence)
+    fenced = '```json\n{"a":1}\n```'
+    assert C.no_preamble(fenced) and C.valid_json(fenced)
+    assert not C.no_preamble("Here is the JSON: {\"a\":1}")   # real prose preamble still rejected
+
+
 def test_build_synth_fn_parses_and_computes_data_share():
     canned = '{"recommendation":"z","claims":[{"claim":"a","provenance":"data","source":"F1"},' \
              '{"claim":"b","provenance":"model","source":"reasoning"}]}'
@@ -230,7 +247,7 @@ def test_shapley_noise_floor_gate_and_se_scaling():
         # signal: input "a" adds 1.0; noise: gaussian sigma=0.3 per draw
         return lambda subset: (1.0 if "a" in subset else 0.0) + rng.gauss(0, 0.3)
 
-    r8 = attribute_shapley(["a", "b"], make_vf(1), k=8)
+    r8 = attribute_shapley(["a", "b"], make_vf(1), k=8, empty_value=0.0)  # this test is about input SE, pin the baseline
     per = {p["id"]: p for p in r8.per_input}
     # every row carries the gate fields
     assert all(("se" in p and "significant" in p and "loo_se" in p) for p in r8.per_input)
@@ -244,8 +261,8 @@ def test_shapley_noise_floor_gate_and_se_scaling():
     assert not b_row["significant"]
 
     # SE shrinks with K roughly like 1/sqrt(K): K=32 SE should be well under K=2 SE
-    r2 = attribute_shapley(["a", "b"], make_vf(2), k=2)
-    r32 = attribute_shapley(["a", "b"], make_vf(3), k=32)
+    r2 = attribute_shapley(["a", "b"], make_vf(2), k=2, empty_value=0.0)
+    r32 = attribute_shapley(["a", "b"], make_vf(3), k=32, empty_value=0.0)
     se2 = max(p["se"] for p in r2.per_input)
     se32 = max(p["se"] for p in r32.per_input)
     assert se32 < se2 / 2  # sqrt(32/2)=4x expected; require >2x to stay non-flaky
@@ -279,10 +296,16 @@ def test_shapley_empty_value_measured_not_assumed():
     assert abs(per_m["x2"]["shapley"]) < 1e-9          # b: contributes nothing -> zero credit
     assert not per_m["x2"]["significant"]
 
+    # the DEFAULT now measures v({}) (no empty_value arg) -- same as empty_value=None. The old
+    # default 0.0 silently misattributed the ambient baseline; measuring is the safe default.
+    default = attribute_shapley(["a", "b"], vf, k=1)
+    assert default.v_empty == 0.4
+    assert abs({p["id"]: p for p in default.per_input}["x2"]["shapley"]) < 1e-9
+
     # The efficiency axiom holds BY CONSTRUCTION against whatever v(empty) was recorded --
     # so a wrong assumed baseline doesn't break the receipt, it MISATTRIBUTES: the ambient
     # 0.4 gets smeared onto the inputs and the do-nothing input earns phantom credit.
-    assumed = attribute_shapley(["a", "b"], vf, k=1)   # default 0.0 -- the fiction
+    assumed = attribute_shapley(["a", "b"], vf, k=1, empty_value=0.0)   # EXPLICIT 0.0 -- the fiction
     assert assumed.v_empty == 0.0
     per_a = {p["id"]: p for p in assumed.per_input}
     assert per_a["x2"]["shapley"] > 0.15               # phantom credit for a no-op input

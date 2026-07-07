@@ -20,10 +20,13 @@ came out **1.72x** the noise floor while a filler control stayed within noise --
 signal. Below that K the result is below the noise floor and `pieceofmind` will mark it not-significant
 (by design).
 
-## 3. The receipt: exact Shapley satisfies the efficiency axiom on real LLM data
+## 3. The receipt: the efficiency identity (an implementation self-check, NOT validation)
 On the real decision, at K=8, `sum(Shapley) = 0.5438` and `v(full) - v(empty) = 0.5437` -- the
-attributions provably sum to the whole, to 4 decimals, on noisy real-model output. That self-check is
-how you know the implementation is right, not just internally consistent.
+attributions sum to the whole, to 4 decimals. Be precise about what this proves: efficiency
+(`sum(Shapley) = v(full) - v(empty)`) is an **algebraic identity of exact Shapley** -- it holds for
+ANY value function, by construction. So this match is NOT evidence that the attribution is "right on
+real data"; it is a cheap **implementation self-check** -- a broken aggregation or an off-by-one over
+coalitions would fail to balance, and this catches that. Nothing more, nothing less.
 
 ## 4. The hook: leave-one-out LIES; Shapley does not
 At K=8 on the same decision, naive leave-one-out gives **NEGATIVE** contributions to several findings

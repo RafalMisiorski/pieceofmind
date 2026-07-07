@@ -20,12 +20,24 @@ from __future__ import annotations
 import json
 import re
 
-_JSON = re.compile(r"\{.*\}|\[.*\]", re.S)
+_DECODER = json.JSONDecoder()
 
 
 def _extract_json(text: str) -> str:
-    m = _JSON.search(text or "")
-    return m.group(0) if m else (text or "")
+    """First substring that PARSES as a JSON object/array (fences/surrounding prose tolerated),
+    else the original text. Scans '{'/'[' positions with raw_decode instead of a greedy
+    ``\\{.*\\}`` regex -- the greedy regex splices two separate objects into an invalid
+    superstring (``{a} ... {"k":1}`` -> the whole span), failing valid output that contains
+    a real JSON value."""
+    t = text or ""
+    for i, ch in enumerate(t):
+        if ch in "{[":
+            try:
+                _obj, end = _DECODER.raw_decode(t, i)
+                return t[i:end]
+            except ValueError:
+                continue
+    return t
 
 
 def valid_json(output: str, _input=None) -> bool:
@@ -53,17 +65,30 @@ def under_words(n: int):
     return lambda output, _input=None: len((output or "").split()) <= n
 
 
-_REFUSAL = re.compile(r"\b(?:i\s*(?:'m|am)?\s*(?:sorry|unable|can(?:'?t|not)))\b", re.I)
+# A refusal couples an inability ("I can't/cannot/won't/unable to") with the first person, OR the
+# classic "I'm sorry, but ..." opener. Bare "sorry" is NOT a refusal -- "I am sorry to hear that;
+# here is the JSON" is a normal (non-refusing) reply and must pass.
+_REFUSAL = re.compile(
+    r"\bi\s*(?:'m|am)?\s*(?:can(?:'?t|not)|won'?t|will\s+not|unable\s+to|not\s+able\s+to)\b"
+    r"|\bi\s*(?:'m|am)\s+sorry,?\s+but\b",
+    re.I,
+)
 
 
 def no_refusal(output: str, _input=None) -> bool:
-    """True iff the output is not a refusal ('I'm sorry', 'I can't', 'unable to')."""
+    """True iff the output is not a refusal. Fires on inability phrasing ('I can't', 'I cannot',
+    'I'm unable to', 'I won't') and the 'I'm sorry, but ...' opener -- NOT on a bare 'sorry'."""
     return not _REFUSAL.search(output or "")
 
 
+_OPEN_FENCE = re.compile(r"^\s*```[A-Za-z0-9_+-]*[ \t]*\r?\n?")
+
+
 def no_preamble(output: str, _input=None) -> bool:
-    """True iff the output starts with structure (JSON/list/number), not conversational prose."""
-    s = (output or "").lstrip().lstrip("`").lstrip()
+    """True iff the output starts with structure (JSON/list/number), not conversational prose.
+    An opening markdown code fence (```json) is stripped first, so fence policy matches
+    ``valid_json`` (which also tolerates fences) -- the two no longer disagree about fenced output."""
+    s = _OPEN_FENCE.sub("", (output or "").lstrip(), count=1).lstrip()
     return bool(s) and s[0] in '{[-0123456789"'
 
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import itertools
 import statistics
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from math import factorial
 from typing import Callable, Optional, Sequence
 
@@ -137,15 +137,17 @@ class ShapleyReport:
 
 def attribute_shapley(inputs: Sequence, value_fn: ValueFn, *, k: int = 4,
                       ids: Optional[list] = None,
-                      empty_value: Optional[float] = 0.0) -> ShapleyReport:
+                      empty_value: Optional[float] = None) -> ShapleyReport:
     """Exact Shapley attribution over all 2^n coalitions, each K-averaged, WITH a noise floor.
 
     Cost is 2^n*K value-function calls -- exact and affordable for small n (<=~12); for larger n use
-    sampled/permutation Shapley (not yet shipped). ``empty_value`` is v({}): pass ``None`` to have it
-    MEASURED (value_fn([]) averaged K times, with its SE propagated like any coalition) instead of
-    assumed -- do this whenever your metric is nonzero with no inputs (e.g. a model that scores 40%
-    with an empty prompt), or the efficiency receipt sum(Shapley) = v(full) - v(empty) is computed
-    against a fiction. The 0.0 default is only correct when "no inputs" genuinely scores zero.
+    sampled/permutation Shapley (not yet shipped). ``empty_value`` is v({}). It defaults to ``None``,
+    which MEASURES it (value_fn([]) averaged K times, SE propagated like any coalition) -- the safe
+    default, because a metric that is nonzero with no inputs (e.g. a model scoring 40% on an empty
+    prompt) otherwise smears that ambient baseline onto every input as phantom credit, while the
+    efficiency receipt sum(Shapley) = v(full) - v(empty) still balances by construction and hides it.
+    Pass ``empty_value=0.0`` (or any constant) ONLY when you KNOW "no inputs" scores exactly that and
+    want to skip the extra evaluation.
 
     Same significance discipline as attribute_loo: each per-input Shapley value carries an SE
     propagated from the K-rerun SEs of every coalition it touches
