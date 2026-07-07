@@ -216,3 +216,49 @@ def test_build_synth_fn_parses_and_computes_data_share():
     synth_fn = build_synth_fn(lambda system, user: "prose " + canned + " trailing")
     rec = synth_fn(["F1 x"], "sit", "q?")
     assert rec["_provenance_summary"]["data_share"] == 0.5
+
+
+def test_shapley_noise_floor_gate_and_se_scaling():
+    """The flagship discipline must hold in BOTH algorithms: Shapley values carry a propagated SE,
+    significance is |shapley| > 2*SE, and SE shrinks ~1/sqrt(K) with a stochastic value_fn."""
+    import random
+
+    from pieceofmind import attribute_shapley
+
+    def make_vf(seed):
+        rng = random.Random(seed)
+        # signal: input "a" adds 1.0; noise: gaussian sigma=0.3 per draw
+        return lambda subset: (1.0 if "a" in subset else 0.0) + rng.gauss(0, 0.3)
+
+    r8 = attribute_shapley(["a", "b"], make_vf(1), k=8)
+    per = {p["id"]: p for p in r8.per_input}
+    # every row carries the gate fields
+    assert all(("se" in p and "significant" in p and "loo_se" in p) for p in r8.per_input)
+    # the real signal is significant; its SE is a real positive number
+    assert per["x1" if "x1" in per else "a"]  # ids default to inputs? no -- ids default x1..
+    a_row = per.get("a") or per["x1"]
+    b_row = per.get("b") or per["x2"]
+    assert a_row["significant"] and a_row["shapley"] > 0.5
+    assert a_row["se"] > 0
+    # the pure-noise input must NOT clear the 2*SE gate at this sigma/K
+    assert not b_row["significant"]
+
+    # SE shrinks with K roughly like 1/sqrt(K): K=32 SE should be well under K=2 SE
+    r2 = attribute_shapley(["a", "b"], make_vf(2), k=2)
+    r32 = attribute_shapley(["a", "b"], make_vf(3), k=32)
+    se2 = max(p["se"] for p in r2.per_input)
+    se32 = max(p["se"] for p in r32.per_input)
+    assert se32 < se2 / 2  # sqrt(32/2)=4x expected; require >2x to stay non-flaky
+
+
+def test_shapley_deterministic_value_fn_all_zero_se():
+    """Deterministic value_fn -> SE 0 everywhere; nonzero attributions significant, zero ones not."""
+    from pieceofmind import attribute_shapley
+
+    vf = lambda subset: 1.0 if "x" in subset else 0.0
+    r = attribute_shapley(["x", "dead"], vf, k=1)
+    per = {p["id"]: p for p in r.per_input}
+    x = per.get("x") or per["x1"]
+    dead = per.get("dead") or per["x2"]
+    assert x["se"] == 0 and x["significant"]
+    assert dead["se"] == 0 and not dead["significant"]

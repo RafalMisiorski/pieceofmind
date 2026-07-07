@@ -137,27 +137,47 @@ class ShapleyReport:
 
 def attribute_shapley(inputs: Sequence, value_fn: ValueFn, *, k: int = 4,
                       ids: Optional[list] = None, empty_value: float = 0.0) -> ShapleyReport:
-    """Exact Shapley attribution over all 2^n coalitions, each K-averaged.
+    """Exact Shapley attribution over all 2^n coalitions, each K-averaged, WITH a noise floor.
 
     Cost is 2^n*K value-function calls -- exact and affordable for small n (<=~12); for larger n use
     sampled/permutation Shapley (not yet shipped). ``empty_value`` is v({}) (default 0.0: with no
-    inputs there is nothing to attribute)."""
+    inputs there is nothing to attribute).
+
+    Same significance discipline as attribute_loo: each per-input Shapley value carries an SE
+    propagated from the K-rerun SEs of every coalition it touches
+    (Var(phi_i) = sum_S w(|S|)^2 * (se(S+i)^2 + se(S)^2), coalitions treated as independent
+    estimates), and ``significant`` is |shapley| > 2*se. With a deterministic value_fn (or k=1)
+    all SEs are 0 and any nonzero attribution is significant; for noisy value functions use k>=4."""
     inputs = list(inputs)
     n = len(inputs)
     ids = ids or [f"x{i + 1}" for i in range(n)]
     values: dict = {}
+    ses: dict = {}
     for r in range(n + 1):
         for combo in itertools.combinations(range(n), r):
             S = frozenset(combo)
             if not combo:
-                values[S] = empty_value
+                values[S], ses[S] = empty_value, 0.0   # v({}) is a constant, not an estimate
                 continue
-            values[S] = _avg(value_fn, [inputs[i] for i in combo], k)["mean"]
+            st = _avg(value_fn, [inputs[i] for i in combo], k)
+            values[S], ses[S] = st["mean"], (st["se"] or 0.0)
     sh = shapley_from_values(values, n)
     full = frozenset(range(n))
-    loo = [round(values[full] - values[full - {i}], 4) for i in range(n)]
-    per = [{"id": ids[i], "shapley": sh[i], "loo": loo[i],
-            "shapley_minus_loo": round(sh[i] - loo[i], 4)} for i in range(n)]
+    per = []
+    for i in range(n):
+        var_i = 0.0
+        for r in range(n):
+            for combo in itertools.combinations([j for j in range(n) if j != i], r):
+                S = frozenset(combo)
+                w = _shapley_weight(len(combo), n)
+                var_i += (w ** 2) * (ses[S | {i}] ** 2 + ses[S] ** 2)
+        se_i = var_i ** 0.5
+        loo_i = values[full] - values[full - {i}]
+        loo_se_i = (ses[full] ** 2 + ses[full - {i}] ** 2) ** 0.5
+        per.append({"id": ids[i], "shapley": sh[i], "se": round(se_i, 4),
+                    "significant": abs(sh[i]) > 2 * se_i,
+                    "loo": round(loo_i, 4), "loo_se": round(loo_se_i, 4),
+                    "shapley_minus_loo": round(sh[i] - loo_i, 4)})
     per.sort(key=lambda p: -p["shapley"])
     return ShapleyReport(round(values[full], 4), round(values[frozenset()], 4), k, per, round(sum(sh), 4))
 
@@ -188,16 +208,20 @@ def render_shapley(r: ShapleyReport) -> str:
          f"v(full)-v(empty)={round(r.v_full - r.v_empty, 4)}  (the receipt)", "",
          "| input | Shapley | LOO | Shapley-LOO | reading |", "|---|---|---|---|---|"]
     for p in r.per_input:
-        if p["shapley"] <= -0.04:
+        sig = p.get("significant", abs(p["shapley"]) > 0)
+        if not sig:
+            reading = "below the noise floor (|Shapley| <= 2*SE) -- dead weight at this K"
+        elif p["shapley"] < 0:
             reading = "HARMFUL -- lowers the metric (e.g. a misleading input)"
-        elif p["shapley"] >= 0.05 and p["loo"] < 0.01:
+        elif abs(p["loo"]) <= 2 * p.get("loo_se", 0.0):
             reading = "load-bearing -- LOO MISSED it (redundancy/noise)"
-        elif p["shapley"] >= 0.05:
-            reading = "load-bearing"
         else:
-            reading = "not load-bearing"
-        L.append(f"| {p['id']} | {p['shapley']} | {p['loo']} | {p['shapley_minus_loo']} | {reading} |")
+            reading = "load-bearing"
+        se_txt = f" +/- {p['se']}" if p.get("se") is not None else ""
+        L.append(f"| {p['id']} | {p['shapley']}{se_txt} | {p['loo']} | {p['shapley_minus_loo']} | {reading} |")
     L.append("")
     L.append("NOTE: EXACT Shapley over all 2^n coalitions; splits credit among redundant inputs that "
-             "leave-one-out zeroes (or makes negative). Cost ~ 2^n*K value-fn calls.")
+             "leave-one-out zeroes (or makes negative). Significance is |Shapley| > 2*SE, with SE "
+             "propagated from the K-rerun SEs of every coalition (same noise-floor discipline as LOO). "
+             "Cost ~ 2^n*K value-fn calls.")
     return "\n".join(L)
